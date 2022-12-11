@@ -5,7 +5,9 @@
 package xdb
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -43,6 +45,82 @@ func Long2IP(ip uint32) string {
 
 func MidIP(sip uint32, eip uint32) uint32 {
 	return uint32((uint64(sip) + uint64(eip)) >> 1)
+}
+
+func IterateSegments(handle *os.File, before func(l string), cb func(seg *Segment) error) error {
+	var last *Segment = nil
+	var scanner = bufio.NewScanner(handle)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		var l = strings.TrimSpace(strings.TrimSuffix(scanner.Text(), "\n"))
+		if len(l) < 1 { // ignore empty line
+			continue
+		}
+
+		if l[0] == '#' { // ignore the comment line
+			continue
+		}
+
+		if before != nil {
+			before(l)
+		}
+
+		var ps = strings.SplitN(l, "|", 3)
+		if len(ps) != 3 {
+			return fmt.Errorf("invalid ip segment line `%s`", l)
+		}
+
+		sip, err := CheckIP(ps[0])
+		if err != nil {
+			return fmt.Errorf("check start ip `%s`: %s", ps[0], err)
+		}
+
+		eip, err := CheckIP(ps[1])
+		if err != nil {
+			return fmt.Errorf("check end ip `%s`: %s", ps[1], err)
+		}
+
+		if sip > eip {
+			return fmt.Errorf("start ip(%s) should not be greater than end ip(%s)", ps[0], ps[1])
+		}
+
+		if len(ps[2]) < 1 {
+			return fmt.Errorf("empty region info in segment line `%s`", l)
+		}
+
+		var seg = &Segment{
+			StartIP: sip,
+			EndIP:   eip,
+			Region:  ps[2],
+		}
+
+		// check and automatic merging the Consecutive Segments which means:
+		// 1, region info is the same
+		// 2, last.eip+1 = cur.sip
+		if last == nil {
+			last = seg
+			continue
+		} else if last.Region == seg.Region {
+			if err = seg.AfterCheck(last); err == nil {
+				last.EndIP = seg.EndIP
+				continue
+			}
+		}
+
+		if err = cb(last); err != nil {
+			return err
+		}
+
+		// reset the last
+		last = seg
+	}
+
+	// process the last segment
+	if last != nil {
+		return cb(last)
+	}
+
+	return nil
 }
 
 func CheckSegments(segList []*Segment) error {

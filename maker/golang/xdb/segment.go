@@ -16,7 +16,7 @@ type Segment struct {
 }
 
 func SegmentFrom(seg string) (*Segment, error) {
-	var ps = strings.SplitN(seg, "|", 3)
+	var ps = strings.SplitN(strings.TrimSpace(seg), "|", 3)
 	if len(ps) != 3 {
 		return nil, fmt.Errorf("invalid ip segment `%s`", seg)
 	}
@@ -40,6 +40,20 @@ func SegmentFrom(seg string) (*Segment, error) {
 		EndIP:   eip,
 		Region:  ps[2],
 	}, nil
+}
+
+// AfterCheck check the current segment is the one just after the specified one
+func (s *Segment) AfterCheck(last *Segment) error {
+	if last != nil {
+		if last.EndIP+1 != s.StartIP {
+			return fmt.Errorf(
+				"discontinuous data segment: last.eip+1(%d) != seg.sip(%d, %s)",
+				last.EndIP+1, s.StartIP, s.Region,
+			)
+		}
+	}
+
+	return nil
 }
 
 // Split the segment based on the pre-two bytes
@@ -93,5 +107,5 @@ func (s *Segment) Split() []*Segment {
 }
 
 func (s *Segment) String() string {
-	return Long2IP(s.StartIP) + "|" + Long2IP(s.EndIP) + "|" + s.Region
+	return fmt.Sprintf("%s|%s|%s", Long2IP(s.StartIP), Long2IP(s.EndIP), s.Region)
 }
